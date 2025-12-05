@@ -3,9 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
-// go up from visit/ to features/, then into ctopup/
-import '../ctopup/models/child_pos.dart';
-import '../ctopup/screens/ctopup_list_screen.dart' show baseApiUrl;
+import '../../ctopup/models/child_pos.dart';
+import '../../ctopup/screens/ctopup_list_screen.dart' show baseApiUrl;
 
 class VisitStartScreen extends StatefulWidget {
   final ChildPos childPos;
@@ -147,7 +146,7 @@ class _VisitStartScreenState extends State<VisitStartScreen> {
 
             // Visit type
             DropdownButtonFormField<String>(
-              value: _visitType,
+              initialValue: _visitType, // 👈 changed
               decoration: const InputDecoration(
                 labelText: 'Visit Type',
                 border: OutlineInputBorder(),
@@ -187,7 +186,7 @@ class _VisitStartScreenState extends State<VisitStartScreen> {
 
             // Retailer status
             DropdownButtonFormField<String>(
-              value: _retailerStatus,
+              initialValue: _retailerStatus, // 👈 changed
               decoration: const InputDecoration(
                 labelText: 'Retailer Status',
                 border: OutlineInputBorder(),

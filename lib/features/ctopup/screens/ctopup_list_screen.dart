@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import '../models/child_pos.dart';
 import 'ctopup_detail_screen.dart';
 
-const String baseApiUrl = 'http://10.0.2.2/SFAS/api';
+const String baseApiUrl = 'http://10.29.102.103/SFAS/api';
 // For physical phone, change to: 'http://YOUR_PC_IP/SFAS/api';
 
 class CtopupListScreen extends StatefulWidget {

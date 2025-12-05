@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../models/child_pos.dart';
-import '../../visit/visit_start_screen.dart';
+import '../../visit/screens/visit_start_screen.dart';
+import '../../visit/screens/visit_history_screen.dart';
 
 class CtopupDetailScreen extends StatelessWidget {
   final ChildPos childPos;
@@ -11,7 +12,7 @@ class CtopupDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('POS Detail')),
+      appBar: AppBar(title: const Text('POS Detail')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: ListView(
@@ -81,6 +82,25 @@ class CtopupDetailScreen extends StatelessWidget {
                     context,
                     MaterialPageRoute(
                       builder: (_) => VisitStartScreen(childPos: childPos),
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            // View Visit History button
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.history),
+                label: const Text('View Visit History'),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => VisitHistoryScreen(childPos: childPos),
                     ),
                   );
                 },
