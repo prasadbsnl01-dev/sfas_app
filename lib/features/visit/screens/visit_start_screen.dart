@@ -1,10 +1,20 @@
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:image_picker/image_picker.dart';
+import 'package:geolocator/geolocator.dart';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../../ctopup/models/child_pos.dart';
-import '../../ctopup/screens/ctopup_list_screen.dart' show baseApiUrl;
+
+// 🔴 CHANGE THIS URL depending on where you run:
+// Emulator:   'http://10.0.2.2/SFAS/api/visit/save_visit.php'
+// Phone (Wi-Fi / hotspot): 'http://10.29.102.159/SFAS/api/visit/save_visit.php'
+//                           ^ use your PC's IP here.
+const String _visitApiUrl =
+    'http://10.29.102.159/SFAS/api/visit/save_visit.php';
 
 class VisitStartScreen extends StatefulWidget {
   final ChildPos childPos;
@@ -16,7 +26,7 @@ class VisitStartScreen extends StatefulWidget {
 }
 
 class _VisitStartScreenState extends State<VisitStartScreen> {
-  // Controllers
+  // Controllers / state
   String _visitType = 'Regular Visit';
   String _retailerStatus = 'Met Retailer';
 
@@ -28,29 +38,136 @@ class _VisitStartScreenState extends State<VisitStartScreen> {
   bool _isSubmitting = false;
   String? _error;
 
+  // photo + GPS
+  File? _photoFile;
+  Position? _position;
+  bool _isCapturing = false;
+
+  // ---------------- CAPTURE PHOTO + LOCATION ----------------
+
+  Future<void> _capturePhotoAndLocation() async {
+    try {
+      setState(() {
+        _isCapturing = true;
+        _error = null;
+      });
+
+      // 1) Check GPS enabled
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please enable Location (GPS) on your device.'),
+          ),
+        );
+        return;
+      }
+
+      // 2) Request permission if needed
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Location permission denied. Cannot capture GPS.'),
+          ),
+        );
+        return;
+      }
+
+      // 3) Get position
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      // 4) Capture photo
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 70,
+        maxWidth: 1024,
+      );
+
+      if (picked == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Photo not captured.')));
+        return;
+      }
+
+      setState(() {
+        _position = position;
+        _photoFile = File(picked.path);
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Failed to capture photo/location: $e';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCapturing = false;
+        });
+      }
+    }
+  }
+
+  // ---------------- SUBMIT VISIT (WITH PHOTO + GPS) ----------------
+
   Future<void> _submitVisit() async {
+    if (_isSubmitting) return;
+
+    // optional: enforce capture before submit
+    if (_photoFile == null || _position == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please capture Photo & Location before submitting.'),
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _isSubmitting = true;
       _error = null;
     });
 
-    final uri = Uri.parse('$baseApiUrl/visit/save_visit.php');
-
     try {
-      final response = await http.post(
-        uri,
-        body: {
-          'child_ctopup': widget.childPos.childCtop,
-          'parent_ctop': widget.childPos.parentCtop,
-          'pos_name': widget.childPos.posName,
-          'visit_type': _visitType,
-          'retailer_status': _retailerStatus,
-          'today_sales': _todaySalesController.text.trim(),
-          'sales_focus': _salesFocusController.text.trim(),
-          'remarks': _remarksController.text.trim(),
-          'next_action': _nextActionController.text.trim(),
-        },
+      // 👇 NO baseApiUrl here, use clean constant URL
+      final Uri uri = Uri.parse(_visitApiUrl.trim());
+
+      final request = http.MultipartRequest('POST', uri);
+
+      // Text fields
+      request.fields.addAll({
+        'child_ctopup': widget.childPos.childCtop,
+        'parent_ctop': widget.childPos.parentCtop,
+        'pos_name': widget.childPos.posName,
+        'visit_type': _visitType,
+        'retailer_status': _retailerStatus,
+        'today_sales': _todaySalesController.text.trim(),
+        'sales_focus': _salesFocusController.text.trim(),
+        'remarks': _remarksController.text.trim(),
+        'next_action': _nextActionController.text.trim(),
+        'latitude': _position!.latitude.toString(),
+        'longitude': _position!.longitude.toString(),
+        'gps_accuracy': _position!.accuracy.toString(),
+      });
+
+      // Photo file
+      request.files.add(
+        await http.MultipartFile.fromPath('photo', _photoFile!.path),
       );
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
 
       if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}');
@@ -62,13 +179,11 @@ class _VisitStartScreenState extends State<VisitStartScreen> {
         throw Exception(body['message'] ?? 'Failed to save visit');
       }
 
-      // Success
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Visit saved successfully')));
 
-      // Pop back to POS detail or list
       Navigator.pop(context); // back to detail screen
     } catch (e) {
       setState(() {
@@ -83,6 +198,8 @@ class _VisitStartScreenState extends State<VisitStartScreen> {
     }
   }
 
+  // ---------------- LIFECYCLE ----------------
+
   @override
   void dispose() {
     _todaySalesController.dispose();
@@ -91,6 +208,8 @@ class _VisitStartScreenState extends State<VisitStartScreen> {
     _nextActionController.dispose();
     super.dispose();
   }
+
+  // ---------------- UI ----------------
 
   @override
   Widget build(BuildContext context) {
@@ -146,7 +265,7 @@ class _VisitStartScreenState extends State<VisitStartScreen> {
 
             // Visit type
             DropdownButtonFormField<String>(
-              initialValue: _visitType, // 👈 changed
+              initialValue: _visitType,
               decoration: const InputDecoration(
                 labelText: 'Visit Type',
                 border: OutlineInputBorder(),
@@ -186,7 +305,7 @@ class _VisitStartScreenState extends State<VisitStartScreen> {
 
             // Retailer status
             DropdownButtonFormField<String>(
-              initialValue: _retailerStatus, // 👈 changed
+              initialValue: _retailerStatus,
               decoration: const InputDecoration(
                 labelText: 'Retailer Status',
                 border: OutlineInputBorder(),
@@ -265,6 +384,44 @@ class _VisitStartScreenState extends State<VisitStartScreen> {
               ),
             ),
 
+            const SizedBox(height: 16),
+
+            // Capture photo + location button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: _isCapturing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.camera_alt),
+                label: Text(
+                  _isCapturing ? 'Capturing...' : 'Capture Photo & Location',
+                ),
+                onPressed: _isCapturing ? null : _capturePhotoAndLocation,
+              ),
+            ),
+
+            if (_photoFile != null) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 150,
+                child: Image.file(_photoFile!, fit: BoxFit.cover),
+              ),
+            ],
+
+            if (_position != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Location: '
+                '${_position!.latitude.toStringAsFixed(5)}, '
+                '${_position!.longitude.toStringAsFixed(5)}',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+
             const SizedBox(height: 12),
 
             if (_error != null)
@@ -272,6 +429,7 @@ class _VisitStartScreenState extends State<VisitStartScreen> {
 
             const SizedBox(height: 16),
 
+            // Submit button
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(

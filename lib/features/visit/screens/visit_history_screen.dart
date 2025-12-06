@@ -6,6 +6,11 @@ import 'package:http/http.dart' as http;
 import '../../ctopup/models/child_pos.dart';
 import '../../ctopup/screens/ctopup_list_screen.dart' show baseApiUrl;
 
+// ⚠️ IMPORTANT:
+// Emulator -> 'http://10.0.2.2/SFAS/'
+// Physical phone (hotspot/LAN) -> 'http://<YOUR_PC_IP>/SFAS/'
+const String _imageBaseUrl = 'http://10.29.102.159/SFAS/';
+
 class VisitRecord {
   final int id;
   final String visitType;
@@ -15,6 +20,10 @@ class VisitRecord {
   final String todaySales;
   final String salesFocus;
   final String nextAction;
+  final double? latitude;
+  final double? longitude;
+  final double? gpsAccuracy;
+  final String? photoPath;
 
   VisitRecord({
     required this.id,
@@ -25,11 +34,24 @@ class VisitRecord {
     required this.todaySales,
     required this.salesFocus,
     required this.nextAction,
+    this.latitude,
+    this.longitude,
+    this.gpsAccuracy,
+    this.photoPath,
   });
 
   factory VisitRecord.fromJson(Map<String, dynamic> json) {
     String s(dynamic v) => v?.toString() ?? '';
     int i(dynamic v) => int.tryParse(v.toString()) ?? 0;
+
+    double? d(dynamic v) {
+      if (v == null) return null;
+      if (v is num) return v.toDouble();
+      if (v is String && v.trim().isNotEmpty) {
+        return double.tryParse(v);
+      }
+      return null;
+    }
 
     return VisitRecord(
       id: i(json['id']),
@@ -40,6 +62,10 @@ class VisitRecord {
       todaySales: s(json['today_sales']),
       salesFocus: s(json['sales_focus']),
       nextAction: s(json['next_action']),
+      latitude: d(json['latitude']),
+      longitude: d(json['longitude']),
+      gpsAccuracy: d(json['gps_accuracy']),
+      photoPath: json['photo_path']?.toString(),
     );
   }
 }
@@ -119,6 +145,12 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> {
             itemBuilder: (context, index) {
               final v = visits[index];
 
+              final hasPhoto =
+                  v.photoPath != null && v.photoPath!.trim().isNotEmpty;
+              final photoUrl = hasPhoto
+                  ? _imageBaseUrl + v.photoPath!.trim()
+                  : null;
+
               return Card(
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -187,6 +219,46 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> {
                           'Next: ${v.nextAction}',
                           style: const TextStyle(fontSize: 13),
                         ),
+
+                      // GPS line
+                      if (v.latitude != null && v.longitude != null) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          'Location: '
+                          '${v.latitude!.toStringAsFixed(5)}, '
+                          '${v.longitude!.toStringAsFixed(5)}'
+                          '${v.gpsAccuracy != null ? " (±${v.gpsAccuracy!.toStringAsFixed(1)} m)" : ""}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+
+                      // Photo preview
+                      if (hasPhoto && photoUrl != null) ...[
+                        const SizedBox(height: 8),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: SizedBox(
+                            height: 160,
+                            width: double.infinity,
+                            child: Image.network(
+                              photoUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  Container(
+                                    color: Colors.grey.shade300,
+                                    alignment: Alignment.center,
+                                    child: const Text(
+                                      'Photo not available',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                  ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
